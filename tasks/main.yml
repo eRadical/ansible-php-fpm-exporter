@@ -1,0 +1,78 @@
+---
+
+- name: Create the php_fpm_exporter group
+  group:
+    name: "{{ php_fpm_exporter_system_group }}"
+    state: present
+    system: true
+
+- name: Create the php_fpm_exporter user
+  user:
+    name: "{{ php_fpm_exporter_system_user }}"
+    groups: "{{ php_fpm_exporter_system_group }}"
+    append: true
+    shell: /usr/sbin/nologin
+    system: true
+    createhome: false
+    home: /tmp
+
+- name: "Get checksum for php-fpm-exporter.linux.amd64"
+  set_fact:
+    php_fpm_exporter_checksum: "{{ item.split(' ')[0] }}"
+  with_items:
+    - "{{ lookup('url', 'https://github.com/bakins/php-fpm-exporter/releases/download/v' + php_fpm_exporter_version + '/php-fpm-exporter.linux.amd64.sha256.txt', wantlist=True) | list }}"
+  run_once: true
+
+- name: Download php_fpm_exporter binary to local folder
+  become: false
+  get_url:
+    url: "{{ php_fpm_exporter_executables }}/releases/download/v{{ php_fpm_exporter_version }}/php-fpm-exporter.linux.amd64"
+    dest: "/tmp/php_fpm_exporter-{{ php_fpm_exporter_version }}.linux.amd64"
+    checksum: "sha256:{{ php_fpm_exporter_checksum }}"
+  register: _download_binary
+  until: _download_binary is succeeded
+  retries: 5
+  delay: 2
+  delegate_to: localhost
+  check_mode: false
+  run_once: true
+
+- name: Propagate php_fpm_exporter binaries
+  copy:
+    src: "/tmp/php_fpm_exporter-{{ php_fpm_exporter_version }}.linux.amd64"
+    dest: "/usr/local/bin/php_fpm_exporter"
+    mode: 0750
+    owner: "{{ php_fpm_exporter_system_user }}"
+    group: "{{ php_fpm_exporter_system_group }}"
+  notify: restart php_fpm_exporters
+  when: not ansible_check_mode
+
+- name: Copy the PHP-FPM Exporter systemd service file
+  template:
+    src: php_fpm_exporter.service.j2
+    dest: /etc/systemd/system/php_fpm_exporter-{{ item.name }}.service
+    owner: root
+    group: root
+    mode: 0644
+  with_items: "{{ php_fpm_pools }}"
+  notify: reload systemd for php_fpm_exporters
+
+- name: Copy the PHP-FPM Exporter systemd service file
+  template:
+    src: php_fpm_exporter.service.j2
+    dest: /etc/systemd/system/php_fpm_exporter-{{ item.name }}.service
+    owner: root
+    group: root
+    mode: 0644
+  with_items: "{{ php_fpm_pools }}"
+  notify: reload systemd for php_fpm_exporters
+
+- name: If a new service was added SystemD needs to know about it
+  meta: flush_handlers
+
+- name: Make sure all php_fpm_exporter*.service run at astartup
+  systemd:
+    name: "php_fpm_exporter-{{ item.name }}.service"
+    enabled: yes
+    state: started
+  with_items: "{{ php_fpm_pools }}"

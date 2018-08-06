@@ -1,0 +1,15 @@
+---
+php_fpm_exporter_version: 0.4.1
+
+php_fpm_exporter_system_group: "php_fpm_exporter"
+php_fpm_exporter_system_user: "{{ php_fpm_exporter_system_group }}"
+
+php_fpm_exporter_export_ip: "{{ ansible_eth0.ipv4.address }}"
+
+php_fpm_pools:
+  - name: www
+    export_port: 8080
+    fastcgi_endpoint: tcp://127.0.0.1:9000/status
+  # - name: another_pool
+  #   export_port: 8081
+  #   http_endpoint: http://127.0.0.1:9000/status
